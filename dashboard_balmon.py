@@ -1,4 +1,4 @@
-import streamlit as st
+﻿import streamlit as st
 import pandas as pd
 import folium
 from folium.plugins import MarkerCluster, MiniMap, MeasureControl, Fullscreen
@@ -15,7 +15,7 @@ except Exception:
     write_dataframe = None  # type: ignore
 
 # Konfigurasi halaman: gunakan lebar penuh
-st.set_page_config(page_title="Dashboard Link Stasiun Radio", page_icon="🗺️", layout="wide")
+st.set_page_config(page_title="Dashboard Link Stasiun Radio", page_icon="ðŸ—ºï¸", layout="wide")
 
 # CSS ringan untuk merentangkan konten hingga mendekati tepi layar
 st.markdown(
@@ -45,13 +45,13 @@ def render_map(df_to_plot):
     # Esri Street
     folium.TileLayer(
         tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
-        attr='Tiles © Esri — Source: Esri, HERE, Garmin, USGS, NGA, NASA, EPA, NPS, USDA',
+        attr='Tiles Â© Esri â€” Source: Esri, HERE, Garmin, USGS, NGA, NASA, EPA, NPS, USDA',
         name='Street (Esri)', control=True
     ).add_to(m)
     # Esri Satellite Imagery
     folium.TileLayer(
         tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-        attr='Tiles © Esri — Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community',
+        attr='Tiles Â© Esri â€” Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community',
         name='Satellite (Esri)', control=True
     ).add_to(m)
 
@@ -110,7 +110,7 @@ def render_map(df_to_plot):
 
     st_folium(m, height=600, use_container_width=True)
     # Caption kredit penyedia data/tile agar tetap patuh lisensi
-    st.caption("Map data © OpenStreetMap contributors • Tiles © Esri, CartoDB, OSM • Imagery © Esri/Maxar")
+    st.caption("Map data © OpenStreetMap contributors • Tiles © Esri, CartoDB, OSM • Imagery Â© Esri/Maxar")
 
 # Fungsi untuk konversi DMS ke decimal (jika data masih DMS)
 def dms_to_decimal(deg, min_, sec, dir_ind):
@@ -133,9 +133,30 @@ def load_data(file_path):
     df['CIRCUIT_LEN'] = df.apply(lambda row: round(great_circle((row['LAT_DEC'], row['LONG_DEC']), (row['TO_LAT_DEC'], row['TO_LONG_DEC'])).km, 3), axis=1)
     return df
 
-# Path file Excel
-file_path = "Data Site2.xlsx"
-df = load_data(file_path)
+# Ambil data dari PostgreSQL (tabel: balmon_links) sebagai sumber utama
+try:
+    if get_engine_from_params is None:
+        raise RuntimeError("SQLAlchemy belum terpasang. Install: pip install sqlalchemy psycopg2-binary")
+    _params = {"host": "localhost", "port": 5432, "database": "postgres", "user": "postgres", "password": "18agustuz203"}
+    _engine = get_engine_from_params(_params)
+    try:
+        df = pd.read_sql_table('balmon_links', con=_engine)
+    except Exception:
+        df = pd.read_sql_query('SELECT * FROM balmon_links', con=_engine)
+    # Pastikan kolom koordinat decimal & jarak tersedia seperti versi Excel
+    if set(['LAT_DEG','LAT_MIN','LAT_SEC','LAT_DIR_IND','LONG_DEG','LONG_MIN','LONG_SEC','LONG_DIR_IND']).issubset(df.columns):
+        df['LAT_DEC'] = df.apply(lambda row: dms_to_decimal(row['LAT_DEG'], row['LAT_MIN'], row['LAT_SEC'], row['LAT_DIR_IND']), axis=1)
+        df['LONG_DEC'] = df.apply(lambda row: dms_to_decimal(row['LONG_DEG'], row['LONG_MIN'], row['LONG_SEC'], row['LONG_DIR_IND']), axis=1)
+    if set(['TO_LAT_DEG','TO_LAT_MIN','TO_LAT_SEC','TO_LAT_DIR_IND','TO_LONG_DEG','TO_LONG_MIN','TO_LONG_SEC','TO_LONG_DIR_IND']).issubset(df.columns):
+        df['TO_LAT_DEC'] = df.apply(lambda row: dms_to_decimal(row['TO_LAT_DEG'], row['TO_LAT_MIN'], row['TO_LAT_SEC'], row['TO_LAT_DIR_IND']), axis=1)
+        df['TO_LONG_DEC'] = df.apply(lambda row: dms_to_decimal(row['TO_LONG_DEG'], row['TO_LONG_MIN'], row['TO_LONG_SEC'], row['TO_LONG_DIR_IND']), axis=1)
+    if {'LAT_DEC','LONG_DEC','TO_LAT_DEC','TO_LONG_DEC'}.issubset(df.columns):
+        df['CIRCUIT_LEN'] = df.apply(lambda row: round(great_circle((row['LAT_DEC'], row['LONG_DEC']), (row['TO_LAT_DEC'], row['TO_LONG_DEC'])).km, 3), axis=1)
+    st.caption("Data diambil dari PostgreSQL (balmon_links)")
+except Exception as e:
+    st.warning(f"Gagal ambil dari Database: {e}. Fallback ke Excel.")
+    file_path = "Data Site2.xlsx"
+    df = load_data(file_path)
 
 # Sidebar untuk filter/edit
 st.sidebar.title("Filter & Edit")
@@ -275,7 +296,10 @@ with tab_map:
 with tab_table:
     st.subheader("Tabel Data (Editable)")
     st.caption("Klik sel untuk ubah. Tambah baris baru jika perlu.")
-    edited_df = st.data_editor(df_filtered, num_rows="dynamic", use_container_width=True)
+    # Sembunyikan kolom primary key (id) dari tampilan editor
+    hidden_candidates = [c for c in ['id', 'ID', 'Id'] if c in df_filtered.columns]
+    df_for_edit = df_filtered.drop(columns=hidden_candidates) if hidden_candidates else df_filtered
+    edited_df = st.data_editor(df_for_edit, num_rows="dynamic", use_container_width=True)
     if st.button("Hitung Ulang & Simpan Perubahan"):
         # Update koordinat decimal dari edited data (jika user edit DMS)
         edited_df['LAT_DEC'] = edited_df.apply(lambda row: dms_to_decimal(row['LAT_DEG'], row['LAT_MIN'], row['LAT_SEC'], row['LAT_DIR_IND']), axis=1)
@@ -295,7 +319,7 @@ with tab_table:
 
 with tab_stats:
     st.subheader("Statistik Ringkas")
-    st.markdown("- Distribusi jarak (km) — ringkasan deskriptif")
+    st.markdown("- Distribusi jarak (km) â€” ringkasan deskriptif")
     if 'CIRCUIT_LEN' in df_filtered:
         st.dataframe(df_filtered['CIRCUIT_LEN'].describe().to_frame().T, use_container_width=True)
     else:
@@ -304,7 +328,7 @@ with tab_stats:
 st.caption("Tip: Gunakan layer control di peta untuk ganti basemap (Street/Satellite).")
 
 # Sidebar section: Import Excel -> PostgreSQL
-with st.sidebar.expander("Database • Import Excel → PostgreSQL", expanded=False):
+with st.sidebar.expander("Database â€¢ Import Excel â†’ PostgreSQL", expanded=False):
     st.caption("Simpan data saat ini ke PostgreSQL. Isi koneksi lalu klik Import.")
     db_host = st.text_input("Host", value="localhost")
     db_port = st.number_input("Port", value=5432, step=1)
