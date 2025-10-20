@@ -5,3 +5,7 @@ pandas
 numpy
 geopandas
 plotly
+geopy
+openpyxl
+SQLAlchemy
+psycopg2-binary
